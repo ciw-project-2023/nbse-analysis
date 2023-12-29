@@ -2,57 +2,70 @@
 import os
 import subprocess
 import time
-from dataclasses import dataclass
-
 import sys
-import tempfile
+import multiprocessing
+from zipfile import ZipFile
+from dataclasses import dataclass
+from copy import copy
+
+import requests
+
 from os import listdir
 from rdkit import Chem
 from rdkit.Chem import AllChem
+from rdkit.Chem import rdShapeHelpers
+from rdkit.Chem import rdmolops
+
+from nbse_analysis.chem import sdf_to_smiles, sdf_to_mol
+from nbse_analysis.list import flatten
 
 target = 'Release'
 verbose = True
-num_conformers = 40
-threads = 16
+fast = True
+num_conformers_multi = ([10, 20, 40] if fast else [40, 80, 120])
+num_conformers = 70
+threads = multiprocessing.cpu_count()
 pwd = os.getcwd()
+
 nbse_dir = '../nbse'
-coaler_bin = '/home/niklas/projects/uni/coaler/build/{}/src/coaler'.format(target)
 
 
-def flatten(l):
-    return [item for sublist in l for item in sublist]
+def download_nbse():
+    nbse_address = 'https://fiona.uni-hamburg.de/37ebe22f/nbse.zip'
+    os.makedirs(nbse_dir, exist_ok=True)
+
+    print("downloading nbse archive. this can take a while ...")
+
+    resp = requests.get(nbse_address)
+    zip_filename = os.path.join(nbse_dir, "nbse.zip")
+
+    with open(zip_filename, "wb") as zip_file:
+        zip_file.write(resp.content)
+
+    with ZipFile(zip_filename, "r") as zip_ref:
+        zip_ref.extractall(nbse_dir)
+
+    print("extracted source files here: {}".format(nbse_dir))
 
 
-def get_nbse(file: str) -> list[AllChem.Mol]:
-    mols: list[AllChem.Mol] = []
-    suppl = Chem.SDMolSupplier(file, sanitize=False, removeHs=True)
-    for mol in suppl:
-        mol: AllChem.Mol
-        mols.append(mol)
+if not os.path.isdir(nbse_dir):
+    download_nbse()
 
-    return mols
+coaler_bin = '/usr/local/bin/coaler'
 
 
-def sdf_to_smiles(file: str) -> list[tuple[str, str]]:
-    smiles = []
-    suppl = Chem.SDMolSupplier(file, sanitize=False, removeHs=True)
-    for mol in suppl:
-        mol: AllChem.Mol
-        smiles.append((Chem.MolToSmiles(mol), mol.GetProp("_Name")))
-
-    return smiles
+def is_ligand_file(file: str) -> bool:
+    return not file.startswith('benchmark_result') and not file.startswith("result") and file.endswith('.sdf')
 
 
 def get_nbse_smiles(dir: str) -> list[tuple[str, str]]:
-    files = [file for file in listdir(dir) if
-             not file.startswith('benchmark_result') and not file.startswith("result") and file.endswith('.sdf')]
+    files = [file for file in listdir(dir) if is_ligand_file(file)]
     return flatten([sdf_to_smiles(os.path.join(dir, file)) for file in files])
 
 
 def get_nbse_mols(dir: str) -> list[AllChem.Mol]:
-    files = [file for file in listdir(dir) if
-             not file.startswith('benchmark_result') and not file.startswith("result") and file.endswith('.sdf')]
-    return flatten([get_nbse(os.path.join(dir, file)) for file in files])
+    files = [file for file in listdir(dir) if is_ligand_file(file)]
+    return flatten([sdf_to_mol(os.path.join(dir, file)) for file in files])
 
 
 @dataclass
@@ -60,50 +73,54 @@ class Result:
     name: str
     took: float
     conformers: int
-    local_score: float
-    siena_score: float
-    avg_conformer_score: float
+    local_similarity: float
+    siena_rmsd: float
+    global_tanimoto: float
+    avg_conformer_tanimoto_dist: float
 
     def header(self):
-        return 'name,took,conformers,local_similarity,avg_conformer_rmsd,siena_rmsd'
+        return 'name\ttook\tconformers\tlocal_similarity\tavg_conformer_tanimoto_dist\tglobal_shape_tanimoto_dist\tsiena_rmsd'
 
     def __str__(self):
-        return '{},{},{},{},{},{}'.format(self.name, self.took, self.conformers, self.local_score,
-                                          self.avg_conformer_score, self.siena_score)
+        return ('{}\t{}\t{}\t{}\t{}\t{}\t{}'
+                .format(self.name, int(self.took), self.conformers, self.local_similarity,
+                                          self.avg_conformer_tanimoto_dist, self.global_tanimoto, self.siena_rmsd))
 
 
-def substruct(mol: AllChem.Mol, query: AllChem.Mol) -> list[tuple[int, int]]:
-    s = mol.GetSubstructMatch(query)
-    assert(len(s) > 0)
-    return list(zip(range(len(s)), list(s)))
+def run_coaler(infile_name: str, outfile_name: str, conformers: int):
+    cmd_args = [coaler_bin,
+                '--input', infile_name,
+                '--out', outfile_name,
+                '--verbose', ('true' if verbose else 'false'),
+                '--thread', str(threads),
+                '--core', 'mcs',
+                '--divide', 'true',
+                '--conformers', str(num_conformers)]
 
+    coaler = subprocess.Popen(cmd_args, stdout=(sys.stdout if verbose else subprocess.DEVNULL))
+    coaler.communicate()
+
+
+def create_input_smiles_file(dir: str):
+    smiles = get_nbse_smiles(dir)
+    with open(os.path.join(dir, 'benchmark_input.smi'), 'w') as f:
+        for (smi, n) in smiles:
+            f.write('{}\t{}\n'.format(smi, n))
+        f.flush()
 
 
 def benchmark_nbse_ensemble(name: str) -> Result:
     directory = os.path.join(nbse_dir, name, 'ligands')
     orig: list[Chem.Mol] = get_nbse_mols(directory)
 
-    in_file = os.path.join(directory, 'benchmark_input.smi')
-    if not os.path.isfile(in_file):
-        smiles = get_nbse_smiles(directory)
-        with open(os.path.join(directory, 'benchmark_input.smi'), 'w') as f:
-            for (smi, n) in smiles:
-                f.write('{}\t{}\n'.format(smi, n))
-            f.flush()
+    infile_name = os.path.join(directory, 'benchmark_input.smi')
+    if not os.path.isfile(infile_name):
+        create_input_smiles_file(directory)
 
     outfile_name = os.path.join(directory, "result_coaler.sdf")
-    cmd_args = [coaler_bin,
-                '-f', in_file,
-                '-o', outfile_name,
-                '-j', str(threads),
-                '--divide', 'true',
-                '--conformers', str(num_conformers)]
 
     start = time.time()
-
-    coaler = subprocess.Popen(cmd_args, stdout=(sys.stdout if verbose else subprocess.DEVNULL))
-    coaler.communicate()
-
+    run_coaler(infile_name, outfile_name, num_conformers)
     end = time.time()
 
     out_mol_suppl = Chem.SDMolSupplier(outfile_name, sanitize=False, removeHs=True)
@@ -120,8 +137,20 @@ def benchmark_nbse_ensemble(name: str) -> Result:
     inp: AllChem.Mol
     out: AllChem.Mol
 
+    local_similarity = 0.0
+    avg_conformer_tanimoto_dist = 0.0
+
     for inp in orig:
         out = out_by_name[inp.GetProp("_Name")]
+        inp = rdmolops.RemoveHs(inp, False, True, True)
+        rdmolops.SanitizeMol(out)
+
+        local_similarity += float(out.GetProp("_Score"))
+
+        # we need a copy to align it to the original molecule in order to compute tanimoto shape similarity
+        out_for_align = copy(out)
+        print("aligned ligands with score: {}".format(AllChem.AlignMol(out_for_align, inp)))
+        avg_conformer_tanimoto_dist += rdShapeHelpers.ShapeTanimotoDist(inp, out_for_align)
 
         offset_in = 0
         offset_out = 0
@@ -135,17 +164,21 @@ def benchmark_nbse_ensemble(name: str) -> Result:
             merged_in = Chem.CombineMols(merged_in, inp)
             merged_out = Chem.CombineMols(merged_out, out)
 
-        AllChem.MolToSmiles(inp)
-        AllChem.MolToSmiles(out)
-
-        match_in_ref = inp.GetSubstructMatch(out)
+        match_in_ref = inp.GetSubstructMatch(out, False, False)
+        if len(match_in_ref) == 0:
+            print("could not find match between:\ninp: {}\nout: {}\n".format(AllChem.MolToSmiles(inp),
+                                                                             AllChem.MolToSmiles(out)))
 
         for (in_prb, in_ref) in list(zip(range(len(match_in_ref)), list(match_in_ref))):
             atom_map[in_prb + offset_out] = in_ref + offset_in
 
+    local_similarity /= len(out_by_name)
+    avg_conformer_tanimoto_dist /= len(out_by_name)
+
     result_writer = Chem.SDWriter(os.path.join(directory, 'benchmark_result.sdf'))
     aligned = AllChem.AlignMol(merged_out, merged_in, -1, -1, list(atom_map.items()))
-    print("global alignment score: {}".format(aligned))
+
+    tanimoto = rdShapeHelpers.ShapeTanimotoDist(merged_out, merged_in)
 
     merged_out.SetProp("_Name", "coaler_output")
     merged_in.SetProp("_Name", "siena_ligands")
@@ -158,20 +191,19 @@ def benchmark_nbse_ensemble(name: str) -> Result:
         name=name,
         took=end - start,
         conformers=num_conformers,
-        siena_score=aligned,
-        avg_conformer_score=0,
-        local_score=list(out_by_name.values())[0].GetProp("_Score"),
+        siena_rmsd=aligned,
+        global_tanimoto=tanimoto,
+        avg_conformer_tanimoto_dist=avg_conformer_tanimoto_dist,
+        local_similarity=local_similarity,
     )
-
-    print(str(res))
 
     return res
 
 
 if __name__ == '__main__':
     reinvesitgate = ['2pqk', '1v48', '4ajn', '4hw2', '4ly9']
-    done = ['1d0s', '4ajn', '1u0z', '2w0v', '4c4f', '3id8', '4c4f', '3id8', '4nb6', '2zsd']
-    working = ['4ajn', '1u0z', '2w0v', '4c4f', '3id8', '4c4f', '3id8', '4nb6', '2zsd']
+    done = ['1d0s', '2vke', '4ajn', '1u0z', '2w0v', '4c4f', '3id8', '4c4f', '3id8', '4nb6', '2zsd']
+    working = ['1d0s', '2vke', '4ajn', '1u0z', '2w0v', '4c4f', '3id8', '4c4f', '3id8', '4nb6', '2zsd']
 
     results = []
     for name in working:
