@@ -23,7 +23,7 @@ target = 'Release'
 verbose = True
 fast = True
 num_conformers_multi = ([10, 20, 40] if fast else [40, 80, 120])
-num_conformers = 70
+num_conformers = 20
 threads = multiprocessing.cpu_count()
 pwd = os.getcwd()
 
@@ -75,23 +75,23 @@ class Result:
     conformers: int
     local_similarity: float
     siena_rmsd: float
-    global_tanimoto: float
     avg_conformer_tanimoto_dist: float
 
     def header(self):
-        return 'name\ttook\tconformers\tlocal_similarity\tavg_conformer_tanimoto_dist\tglobal_shape_tanimoto_dist\tsiena_rmsd'
+        return 'name\ttook\tconformers\tlocal_similarity\tavg_conformer_tanimoto_dist\tsiena_rmsd'
 
     def __str__(self):
-        return ('{}\t{}\t{}\t{}\t{}\t{}\t{}'
+        return ('{}\t{}\t{}\t{}\t{}\t{}'
                 .format(self.name, int(self.took), self.conformers, self.local_similarity,
-                                          self.avg_conformer_tanimoto_dist, self.global_tanimoto, self.siena_rmsd))
+                                          self.avg_conformer_tanimoto_dist, self.siena_rmsd))
 
 
 def run_coaler(infile_name: str, outfile_name: str, conformers: int):
     cmd_args = [coaler_bin,
                 '--input', infile_name,
                 '--out', outfile_name,
-                '--verbose', ('true' if verbose else 'false'),
+                '--verbose', 'false',
+                '--assemblies', '10',
                 '--thread', str(threads),
                 '--core', 'mcs',
                 '--divide', 'true',
@@ -178,7 +178,12 @@ def benchmark_nbse_ensemble(name: str) -> Result:
     result_writer = Chem.SDWriter(os.path.join(directory, 'benchmark_result.sdf'))
     aligned = AllChem.AlignMol(merged_out, merged_in, -1, -1, list(atom_map.items()))
 
-    tanimoto = rdShapeHelpers.ShapeTanimotoDist(merged_out, merged_in)
+    merged_out_mirror = copy(merged_out)
+    aligned_reflect = AllChem.AlignMol(merged_out_mirror, merged_in, -1, -1, list(atom_map.items()), [], True)
+
+    if aligned_reflect < aligned:
+        aligned = aligned_reflect
+        merged_out = merged_out_mirror
 
     merged_out.SetProp("_Name", "coaler_output")
     merged_in.SetProp("_Name", "siena_ligands")
@@ -192,7 +197,6 @@ def benchmark_nbse_ensemble(name: str) -> Result:
         took=end - start,
         conformers=num_conformers,
         siena_rmsd=aligned,
-        global_tanimoto=tanimoto,
         avg_conformer_tanimoto_dist=avg_conformer_tanimoto_dist,
         local_similarity=local_similarity,
     )
@@ -201,25 +205,45 @@ def benchmark_nbse_ensemble(name: str) -> Result:
 
 
 if __name__ == '__main__':
-    reinvesitgate = ['2pqk', '1v48', '4ajn', '4hw2', '4ly9']
+    # just doesnt work
+    reinvesitgate = ['2qpk', '4ly9', '1qss', '1aoe']
+    # multi mcs problems
+    complex = ['4ajn', '2w0v', '1u0z']
     done = ['1d0s', '2vke', '4ajn', '1u0z', '2w0v', '4c4f', '3id8', '4c4f', '3id8', '4nb6', '2zsd']
-    working = ['1d0s', '2vke', '4ajn', '1u0z', '2w0v', '4c4f', '3id8', '4c4f', '3id8', '4nb6', '2zsd']
-
-    results = []
-    for name in working:
-        print("running: {}".format(name))
-        results.append(benchmark_nbse_ensemble(name))
+    done2 = ['3ke8', '1odn', '4dko', '3qqs','2j7d', '2opm']
+    #working = ['1d0s', '2vke', '4ajn', '1u0z', '2w0v', '4c4f', '3id8', '4c4f', '3id8', '4nb6', '2zsd']
+    working = [
+        # really good
+        # '2vke',
+        # really shitty -> multi mcs problem
+        # '2zsd',
+        # quite okay (disk of aligned multi hetero ring systems)
+        # '3eyg',
+        # easy core + clorine mess
+        # needs more than 20 optimization steps to complete
+        '3w1t',
+        # real mess -> multi mcs
+        # '4ajn',
+        '4asj',
+        '4dwb'
+    ]
 
     results_csv = None
     if not os.path.isfile('benchmark_results.csv'):
         results_csv = open('benchmark_results.csv', 'w')
-        results_csv.write(Result.header(results[0]) + '\n')
+        results_csv.write(Result.header(Result()) + '\n')
+
     else:
         results_csv = open('benchmark_results.csv', 'a')
+    for name in working:
+        print("running: {}".format(name))
 
-    for result in results:
-        results_csv.write(str(result) + '\n')
+        try:
+            result = benchmark_nbse_ensemble(name)
+            results_csv.write(str(result) + '\n')
+            print("result: {}".format(str(result)))
+            results_csv.flush()
+        except Exception as e:
+            print("error: {}".format(e))
 
     results_csv.close()
-
-    print(results)
