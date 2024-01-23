@@ -19,13 +19,12 @@ from rdkit.Chem import rdmolops
 from nbse_analysis.chem import sdf_to_smiles, sdf_to_mol
 from nbse_analysis.list import flatten
 
-target = 'Release'
 verbose = True
-fast = True
-num_conformers_multi = ([10, 20, 40] if fast else [40, 80, 120])
-num_conformers = 20
+fast = False
 threads = multiprocessing.cpu_count()
 pwd = os.getcwd()
+# timeout in seconds
+timeout = 60 * 15
 
 nbse_dir = '../nbse'
 
@@ -55,7 +54,8 @@ coaler_bin = '/usr/local/bin/coaler'
 
 
 def is_ligand_file(file: str) -> bool:
-    return not file.startswith('benchmark_result') and not file.startswith("result") and file.endswith('.sdf')
+    return not file.startswith('benchmark_result') and not file.startswith(
+        "result") and file.endswith('.sdf')
 
 
 def get_nbse_smiles(dir: str) -> list[tuple[str, str]]:
@@ -69,36 +69,70 @@ def get_nbse_mols(dir: str) -> list[AllChem.Mol]:
 
 
 @dataclass
+class Config:
+    optimizer_coarse: float = 0.5
+    optimizer_fine: float = 0.01
+    num_conformers: int = 20
+    assemblies: int = int(threads / 2)
+    divide: bool = True
+    core: str = 'mcs'
+    optimizer_steps: int = 100
+
+    def to_args(self) -> list[str]:
+        return [
+            '--assemblies', str(self.assemblies),
+            '--core', self.core,
+            '--divide', str(self.divide),
+            '--conformers', str(self.num_conformers),
+            '--optimizer-coarse-threshold', str(self.optimizer_coarse),
+            '--optimizer-fine-threshold', str(self.optimizer_fine),
+            '--optimizer-step-limit', str(self.optimizer_steps),
+        ]
+
+    @staticmethod
+    def csv_header() -> str:
+        return 'optimizer_coarse\toptimizer_fine\tnum_conformers\tassemblies\tdivide\tcore\toptimizer_steps'
+
+    def __str__(self) -> str:
+        return '{}\t{}\t{}\t{}\t{}\t{}\t{}'.format(self.optimizer_coarse,
+                                                   self.optimizer_fine,
+                                                   self.num_conformers,
+                                                   self.assemblies, self.divide,
+                                                   self.core,
+                                                   self.optimizer_steps)
+
+
+@dataclass
 class Result:
     name: str
     took: float
-    conformers: int
     local_similarity: float
     siena_rmsd: float
     avg_conformer_tanimoto_dist: float
+    conf: Config
 
-    def header(self):
-        return 'name\ttook\tconformers\tlocal_similarity\tavg_conformer_tanimoto_dist\tsiena_rmsd'
+    @staticmethod
+    def header():
+        return 'name\ttook\tlocal_similarity\tavg_conformer_tanimoto_dist\tsiena_rmsd\t' + Config.csv_header()
 
     def __str__(self):
         return ('{}\t{}\t{}\t{}\t{}\t{}'
-                .format(self.name, int(self.took), self.conformers, self.local_similarity,
-                                          self.avg_conformer_tanimoto_dist, self.siena_rmsd))
+                .format(self.name, int(self.took), self.local_similarity,
+                        self.avg_conformer_tanimoto_dist, self.siena_rmsd,
+                        str(self.conf)))
 
 
-def run_coaler(infile_name: str, outfile_name: str, conformers: int):
+def run_coaler(infile_name: str, outfile_name: str, config: Config):
     cmd_args = [coaler_bin,
                 '--input', infile_name,
                 '--out', outfile_name,
                 '--verbose', 'false',
-                '--assemblies', '10',
                 '--thread', str(threads),
-                '--core', 'mcs',
-                '--divide', 'true',
-                '--conformers', str(num_conformers)]
+                *config.to_args()]
 
-    coaler = subprocess.Popen(cmd_args, stdout=(sys.stdout if verbose else subprocess.DEVNULL))
-    coaler.communicate()
+    coaler = subprocess.Popen(cmd_args, stdout=(
+        sys.stdout if verbose else subprocess.DEVNULL))
+    coaler.communicate(timeout=timeout)
 
 
 def create_input_smiles_file(dir: str):
@@ -109,7 +143,7 @@ def create_input_smiles_file(dir: str):
         f.flush()
 
 
-def benchmark_nbse_ensemble(name: str) -> Result:
+def benchmark_nbse_ensemble(name: str, conf: Config) -> Result:
     directory = os.path.join(nbse_dir, name, 'ligands')
     orig: list[Chem.Mol] = get_nbse_mols(directory)
 
@@ -120,10 +154,10 @@ def benchmark_nbse_ensemble(name: str) -> Result:
     outfile_name = os.path.join(directory, "result_coaler.sdf")
 
     start = time.time()
-    run_coaler(infile_name, outfile_name, num_conformers)
+    run_coaler(infile_name, outfile_name, conf)
     end = time.time()
 
-    out_mol_suppl = Chem.SDMolSupplier(outfile_name, sanitize=False, removeHs=True)
+    out_mol_suppl = Chem.SDMolSupplier(outfile_name, sanitize=False)
     out_by_name: dict[str, Chem.Mol] = {}
     mol: Chem.Mol
     for mol in out_mol_suppl:
@@ -142,15 +176,15 @@ def benchmark_nbse_ensemble(name: str) -> Result:
 
     for inp in orig:
         out = out_by_name[inp.GetProp("_Name")]
-        inp = rdmolops.RemoveHs(inp, False, True, True)
-        rdmolops.SanitizeMol(out)
 
         local_similarity += float(out.GetProp("_Score"))
 
         # we need a copy to align it to the original molecule in order to compute tanimoto shape similarity
         out_for_align = copy(out)
-        print("aligned ligands with score: {}".format(AllChem.AlignMol(out_for_align, inp)))
-        avg_conformer_tanimoto_dist += rdShapeHelpers.ShapeTanimotoDist(inp, out_for_align)
+        print("aligned ligands with score: {}".format(
+            AllChem.AlignMol(out_for_align, inp)))
+        avg_conformer_tanimoto_dist += rdShapeHelpers.ShapeTanimotoDist(inp,
+                                                                        out_for_align)
 
         offset_in = 0
         offset_out = 0
@@ -166,20 +200,25 @@ def benchmark_nbse_ensemble(name: str) -> Result:
 
         match_in_ref = inp.GetSubstructMatch(out, False, False)
         if len(match_in_ref) == 0:
-            print("could not find match between:\ninp: {}\nout: {}\n".format(AllChem.MolToSmiles(inp),
-                                                                             AllChem.MolToSmiles(out)))
+            print("could not find match between:\ninp: {}\nout: {}\n".format(
+                AllChem.MolToSmiles(inp),
+                AllChem.MolToSmiles(out)))
 
-        for (in_prb, in_ref) in list(zip(range(len(match_in_ref)), list(match_in_ref))):
+        for (in_prb, in_ref) in list(
+                zip(range(len(match_in_ref)), list(match_in_ref))):
             atom_map[in_prb + offset_out] = in_ref + offset_in
 
     local_similarity /= len(out_by_name)
     avg_conformer_tanimoto_dist /= len(out_by_name)
 
-    result_writer = Chem.SDWriter(os.path.join(directory, 'benchmark_result.sdf'))
-    aligned = AllChem.AlignMol(merged_out, merged_in, -1, -1, list(atom_map.items()))
+    result_writer = Chem.SDWriter(
+        os.path.join(directory, 'benchmark_result.sdf'))
+    aligned = AllChem.AlignMol(merged_out, merged_in, -1, -1,
+                               list(atom_map.items()))
 
     merged_out_mirror = copy(merged_out)
-    aligned_reflect = AllChem.AlignMol(merged_out_mirror, merged_in, -1, -1, list(atom_map.items()), [], True)
+    aligned_reflect = AllChem.AlignMol(merged_out_mirror, merged_in, -1, -1,
+                                       list(atom_map.items()), [], True)
 
     if aligned_reflect < aligned:
         aligned = aligned_reflect
@@ -195,55 +234,85 @@ def benchmark_nbse_ensemble(name: str) -> Result:
     res = Result(
         name=name,
         took=end - start,
-        conformers=num_conformers,
         siena_rmsd=aligned,
         avg_conformer_tanimoto_dist=avg_conformer_tanimoto_dist,
         local_similarity=local_similarity,
+        conf=conf
     )
 
     return res
 
 
 if __name__ == '__main__':
-    # just doesnt work
-    reinvesitgate = ['2qpk', '4ly9', '1qss', '1aoe']
-    # multi mcs problems
-    complex = ['4ajn', '2w0v', '1u0z']
-    done = ['1d0s', '2vke', '4ajn', '1u0z', '2w0v', '4c4f', '3id8', '4c4f', '3id8', '4nb6', '2zsd']
-    done2 = ['3ke8', '1odn', '4dko', '3qqs','2j7d', '2opm']
-    #working = ['1d0s', '2vke', '4ajn', '1u0z', '2w0v', '4c4f', '3id8', '4c4f', '3id8', '4nb6', '2zsd']
-    working = [
-        # really good
-        # '2vke',
-        # really shitty -> multi mcs problem
-        # '2zsd',
-        # quite okay (disk of aligned multi hetero ring systems)
-        # '3eyg',
-        # easy core + clorine mess
-        # needs more than 20 optimization steps to complete
-        '3w1t',
-        # real mess -> multi mcs
-        # '4ajn',
-        '4asj',
-        '4dwb'
+    # '1aoe',
+    # really good
+    # '2vke',
+    # # really shitty -> multi mcs problem
+    # '2zsd',
+    # # real mess -> multi mcs
+    # # '4ajn',
+    # # quite okay (disk of aligned multi hetero ring systems)
+    # '3eyg',
+    # # easy core + clorine mess
+    # # needs more than 20 optimization steps to complete
+    # '3w1t',
+    # wild multi mcs
+    # '2hct'
+    # really large molecules with
+    # '1ie8'
+    # gigantic ligans -> conformer generation takes forever, also macrocycles
+    # '1j4h',
+    # '4asj',
+    # '4dwb'
+    first_forty = ['3ke8', '2vke', '1odn', '4dko', '3qqs', '1qss',
+                   '4asj', '2j7d', '4dwb', '3w1t', '2opm', '1aoe',
+                   '3eyg', '3zrc', '4ali', '3ik0', '4gfd', '1uk1',
+                   '3pci', '4mjp', '1uio', '1ie8', '2hct', '1of1',
+                   '1v48', '3g1o', '1m8d', '1vso', '1qkn', '1d0s',
+                   '2w0v', '2bzs', '3g5h', '3vt8', '3tfu', '3id8',
+                   '2ves', '3sor', '2zi5']
+
+    confs: list[Config] = [
+        Config(num_conformers=10, optimizer_fine=0.5, optimizer_coarse=1.5),
+        Config(num_conformers=20, optimizer_fine=0.5, optimizer_coarse=1.5),
+        Config(num_conformers=40, optimizer_fine=0.5, optimizer_coarse=1.5),
+
+        Config(num_conformers=10, optimizer_fine=0.5, optimizer_coarse=1),
+        Config(num_conformers=20, optimizer_fine=0.5, optimizer_coarse=1),
+        Config(num_conformers=40, optimizer_fine=0.5, optimizer_coarse=1),
+
+        Config(num_conformers=10, optimizer_fine=0.2, optimizer_coarse=0.8),
+        Config(num_conformers=20, optimizer_fine=0.2, optimizer_coarse=0.8),
+        Config(num_conformers=40, optimizer_fine=0.2, optimizer_coarse=0.8),
+
+        Config(num_conformers=10, optimizer_fine=0.01, optimizer_coarse=0.4),
+        Config(num_conformers=20, optimizer_fine=0.01, optimizer_coarse=0.4),
+        Config(num_conformers=40, optimizer_fine=0.01, optimizer_coarse=0.4),
     ]
 
     results_csv = None
     if not os.path.isfile('benchmark_results.csv'):
         results_csv = open('benchmark_results.csv', 'w')
-        results_csv.write(Result.header(Result()) + '\n')
+        results_csv.write('{}\n'.format(Result.header()))
+        results_csv.flush()
 
     else:
         results_csv = open('benchmark_results.csv', 'a')
-    for name in working:
-        print("running: {}".format(name))
 
-        try:
-            result = benchmark_nbse_ensemble(name)
-            results_csv.write(str(result) + '\n')
-            print("result: {}".format(str(result)))
-            results_csv.flush()
-        except Exception as e:
-            print("error: {}".format(e))
+    for conf in confs:
+        for name in first_forty[0:5]:
+            print("running: {}".format(name))
+
+            try:
+                result = benchmark_nbse_ensemble(name, conf)
+                results_csv.write(str(result) + '\n')
+                print("result: {}".format(str(result)))
+            except subprocess.TimeoutExpired:
+                result = Result(name, timeout, 0, 0, 0, conf)
+                results_csv.write(str(result) + '\n')
+            except Exception as e:
+                print("error: {}".format(e))
+            finally:
+                results_csv.flush()
 
     results_csv.close()
