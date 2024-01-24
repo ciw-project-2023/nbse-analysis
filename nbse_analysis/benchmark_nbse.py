@@ -273,21 +273,17 @@ if __name__ == '__main__':
                    '2ves', '3sor', '2zi5']
 
     confs: list[Config] = [
-        Config(num_conformers=10, optimizer_fine=0.5, optimizer_coarse=1.5),
-        Config(num_conformers=20, optimizer_fine=0.5, optimizer_coarse=1.5),
-        Config(num_conformers=40, optimizer_fine=0.5, optimizer_coarse=1.5),
+        #Config(num_conformers=10, optimizer_fine=0.5, optimizer_coarse=0.9),
+        #Config(num_conformers=20, optimizer_fine=0.5, optimizer_coarse=0.9),
+        #Config(num_conformers=40, optimizer_fine=0.5, optimizer_coarse=0.9),
 
-        Config(num_conformers=10, optimizer_fine=0.5, optimizer_coarse=1),
-        Config(num_conformers=20, optimizer_fine=0.5, optimizer_coarse=1),
-        Config(num_conformers=40, optimizer_fine=0.5, optimizer_coarse=1),
+        #Config(num_conformers=10, optimizer_fine=0.1, optimizer_coarse=0.6),
+        #Config(num_conformers=20, optimizer_fine=0.1, optimizer_coarse=0.6),
+        #Config(num_conformers=40, optimizer_fine=0.1, optimizer_coarse=0.6),
 
-        Config(num_conformers=10, optimizer_fine=0.2, optimizer_coarse=0.8),
-        Config(num_conformers=20, optimizer_fine=0.2, optimizer_coarse=0.8),
-        Config(num_conformers=40, optimizer_fine=0.2, optimizer_coarse=0.8),
-
-        Config(num_conformers=10, optimizer_fine=0.01, optimizer_coarse=0.4),
-        Config(num_conformers=20, optimizer_fine=0.01, optimizer_coarse=0.4),
-        Config(num_conformers=40, optimizer_fine=0.01, optimizer_coarse=0.4),
+        #Config(num_conformers=10, optimizer_fine=0.01, optimizer_coarse=0.3),
+        #Config(num_conformers=20, optimizer_fine=0.01, optimizer_coarse=0.3),
+        Config(num_conformers=40, optimizer_fine=0.01, optimizer_coarse=0.3),
     ]
 
     results_csv = None
@@ -300,7 +296,7 @@ if __name__ == '__main__':
         results_csv = open('benchmark_results.csv', 'a')
 
     for conf in confs:
-        for name in first_forty[0:5]:
+        for name in first_forty:
             print("running: {}".format(name))
 
             try:
