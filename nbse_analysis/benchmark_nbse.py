@@ -267,10 +267,10 @@ if __name__ == '__main__':
     first_forty = ['3ke8', '2vke', '1odn', '4dko', '3qqs', '1qss',
                    '4asj', '2j7d', '4dwb', '3w1t', '2opm', '1aoe',
                    '3eyg', '3zrc', '4ali', '3ik0', '4gfd', '1uk1',
-                   '3pci', '4mjp', '1uio', '1ie8', '2hct', '1of1',
-                   '1v48', '3g1o', '1m8d', '1vso', '1qkn', '1d0s',
-                   '2w0v', '2bzs', '3g5h', '3vt8', '3tfu', '3id8',
-                   '2ves', '3sor', '2zi5']
+                   '3pci', '4mjp', '1uio', '1ie8', #'2hct',
+                   '1of1', '1v48', '3g1o', '1m8d', '1vso', '1qkn', '1d0s',
+                   '2w0v', '2bzs', '3g5h', #'3vt8',
+                   '3tfu', '3id8', '2ves', '3sor', '2zi5']
 
     confs: list[Config] = [
         #Config(num_conformers=10, optimizer_fine=0.5, optimizer_coarse=0.9),
@@ -281,9 +281,14 @@ if __name__ == '__main__':
         #Config(num_conformers=20, optimizer_fine=0.1, optimizer_coarse=0.6),
         #Config(num_conformers=40, optimizer_fine=0.1, optimizer_coarse=0.6),
 
-        #Config(num_conformers=10, optimizer_fine=0.01, optimizer_coarse=0.3),
-        #Config(num_conformers=20, optimizer_fine=0.01, optimizer_coarse=0.3),
-        Config(num_conformers=40, optimizer_fine=0.01, optimizer_coarse=0.3),
+        # hier kickt das conf minimum adding ziemlich hart
+        Config(num_conformers=10, optimizer_fine=0.01, optimizer_coarse=0.5, assemblies=1),
+        Config(num_conformers=30, optimizer_fine=0.01, optimizer_coarse=0.5, assemblies=1),
+        Config(num_conformers=60, optimizer_fine=0.01, optimizer_coarse=0.5, assemblies=1),
+
+        Config(num_conformers=10, optimizer_fine=0.01, optimizer_coarse=0.3),
+        Config(num_conformers=20, optimizer_fine=0.01, optimizer_coarse=0.3),
+        #Config(num_conformers=40, optimizer_fine=0.01, optimizer_coarse=0.3),  done
     ]
 
     results_csv = None
