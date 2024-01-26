@@ -12,6 +12,8 @@ jupyter = "^1.0.0"
 plotnine = "^0.12.4"
 pandas = "^2.2.0"
 scikit-learn = "^1.4.0"
+plydata = "^0.4.3"
+rtoml = "^0.10.0"
 
 
 [build-system]
