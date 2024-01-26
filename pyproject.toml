@@ -14,6 +14,7 @@ pandas = "^2.2.0"
 scikit-learn = "^1.4.0"
 plydata = "^0.4.3"
 rtoml = "^0.10.0"
+scikit-misc = "^0.3.1"
 
 
 [build-system]
