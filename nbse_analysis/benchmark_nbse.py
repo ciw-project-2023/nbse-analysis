@@ -273,18 +273,19 @@ if __name__ == '__main__':
                    '3tfu', '3id8', '2ves', '3sor', '2zi5']
 
     confs: list[Config] = [
-        #Config(num_conformers=10, optimizer_fine=0.5, optimizer_coarse=0.9),
+        Config(num_conformers=10, optimizer_fine=0.4, optimizer_coarse=0.9),
+
         #Config(num_conformers=20, optimizer_fine=0.5, optimizer_coarse=0.9),
         #Config(num_conformers=40, optimizer_fine=0.5, optimizer_coarse=0.9),
 
         #Config(num_conformers=10, optimizer_fine=0.1, optimizer_coarse=0.6),
-        #Config(num_conformers=20, optimizer_fine=0.1, optimizer_coarse=0.6),
+        #Config(num_conformers=20, optimizer_fine=0.1, optimizer_coarse=0.3),
         #Config(num_conformers=40, optimizer_fine=0.1, optimizer_coarse=0.6),
 
         # hier kickt das conf minimum adding ziemlich hart
-        # Config(num_conformers=10, optimizer_fine=0.01, optimizer_coarse=0.5, assemblies=1),
-        # Config(num_conformers=30, optimizer_fine=0.01, optimizer_coarse=0.5, assemblies=1),
-        Config(num_conformers=60, optimizer_fine=0.01, optimizer_coarse=0.5, assemblies=1),
+        #Config(num_conformers=10, optimizer_fine=0.01, optimizer_coarse=0.5, assemblies=1),
+        #Config(num_conformers=30, optimizer_fine=0.01, optimizer_coarse=0.5, assemblies=1),
+        #Config(num_conformers=60, optimizer_fine=0.01, optimizer_coarse=0.5, assemblies=1),
 
         # Config(num_conformers=10, optimizer_fine=0.01, optimizer_coarse=0.3),
         # Config(num_conformers=20, optimizer_fine=0.01, optimizer_coarse=0.3),
@@ -293,6 +294,9 @@ if __name__ == '__main__':
         # Config(num_conformers=20, optimizer_fine=0.05, optimizer_coarse=0.5),
         # Config(num_conformers=20, optimizer_fine=0.10, optimizer_coarse=0.5),
         # Config(num_conformers=20, optimizer_fine=0.20, optimizer_coarse=0.5),
+
+
+        Config(num_conformers=20, optimizer_fine=0.1, optimizer_coarse=0.3, core='murcko'),
     ]
 
     results_csv = None
@@ -305,7 +309,7 @@ if __name__ == '__main__':
         results_csv = open('benchmark_results.csv', 'a')
 
     for conf in confs:
-        for name in ['4ajn']:
+        for name in first_forty:
             print("running: {}".format(name))
 
             try:
