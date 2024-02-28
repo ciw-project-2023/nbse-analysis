@@ -246,16 +246,18 @@ def benchmark_nbse_ensemble(name: str, conf: Config) -> Result:
 
 
 if __name__ == '__main__':
-    first_forty = [  '3ke8', '2vke', '1odn', '4dko', '3qqs', '1qss',
-                    '4asj', '2j7d', '4dwb', '3w1t', '2opm', '1aoe',
-                    '3eyg', '3zrc', '4ali', '3ik0', '4gfd', '1uk1',
-                    '3pci', '4mjp', '1uio', '1ie8', #'2hct',
+    first_forty = [
+                    # '3ke8', '2vke', '1odn', '4dko', '3qqs', '1qss',
+                    # '4asj', '2j7d', '4dwb', '3w1t', '2opm', '1aoe',
+                    # '3eyg', '3zrc', '4ali', '3ik0', '4gfd', '1uk1',
+                    # '3pci', '4mjp', '1uio',
+                    '1ie8', #'2hct',
                     '1of1', '1v48', '3g1o','1m8d', '1vso', '1qkn',
                     '1d0s', '2w0v', '2bzs', '3g5h', '3vt8', '3tfu',
                     '3id8', '2ves', '3sor', '2zi5']
 
     confs: list[Config] = [
-        #Config(num_conformers=10, optimizer_fine=0.4, optimizer_coarse=0.9),
+        Config(num_conformers=10, optimizer_fine=0.4, optimizer_coarse=0.9),
         #Config(num_conformers=20, optimizer_fine=0.5, optimizer_coarse=0.9),
         #Config(num_conformers=40, optimizer_fine=0.5, optimizer_coarse=0.9),
 
