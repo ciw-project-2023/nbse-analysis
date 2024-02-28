@@ -130,6 +130,8 @@ def run_coaler(infile_name: str, outfile_name: str, config: Config):
                 '--thread', str(threads),
                 *config.to_args()]
 
+    print(cmd_args)
+
     coaler = subprocess.Popen(cmd_args, stdout=(
         sys.stdout if verbose else subprocess.DEVNULL))
     coaler.communicate(timeout=timeout)
@@ -237,44 +239,23 @@ def benchmark_nbse_ensemble(name: str, conf: Config) -> Result:
         siena_rmsd=aligned,
         avg_conformer_tanimoto_dist=avg_conformer_tanimoto_dist,
         local_similarity=local_similarity,
-        conf=conf
+        conf=conf,
     )
 
     return res
 
 
 if __name__ == '__main__':
-    # '1aoe',
-    # really good
-    # '2vke',
-    # # really shitty -> multi mcs problem
-    # '2zsd',
-    # # real mess -> multi mcs
-    # # '4ajn',
-    # # quite okay (disk of aligned multi hetero ring systems)
-    # '3eyg',
-    # # easy core + clorine mess
-    # # needs more than 20 optimization steps to complete
-    # '3w1t',
-    # wild multi mcs
-    # '2hct'
-    # really large molecules with
-    # '1ie8'
-    # gigantic ligans -> conformer generation takes forever, also macrocycles
-    # '1j4h',
-    # '4asj',
-    # '4dwb'
-    first_forty = ['3ke8', '2vke', '1odn', '4dko', '3qqs', '1qss',
-                   '4asj', '2j7d', '4dwb', '3w1t', '2opm', '1aoe',
-                   '3eyg', '3zrc', '4ali', '3ik0', '4gfd', '1uk1',
-                   '3pci', '4mjp', '1uio', '1ie8', #'2hct',
-                   '1of1', '1v48', '3g1o', '1m8d', '1vso', '1qkn', '1d0s',
-                   '2w0v', '2bzs', '3g5h', #'3vt8',
-                   '3tfu', '3id8', '2ves', '3sor', '2zi5']
+    first_forty = [  '3ke8', '2vke', '1odn', '4dko', '3qqs', '1qss',
+                    '4asj', '2j7d', '4dwb', '3w1t', '2opm', '1aoe',
+                    '3eyg', '3zrc', '4ali', '3ik0', '4gfd', '1uk1',
+                    '3pci', '4mjp', '1uio', '1ie8', #'2hct',
+                    '1of1', '1v48', '3g1o','1m8d', '1vso', '1qkn',
+                    '1d0s', '2w0v', '2bzs', '3g5h', '3vt8', '3tfu',
+                    '3id8', '2ves', '3sor', '2zi5']
 
     confs: list[Config] = [
-        Config(num_conformers=10, optimizer_fine=0.4, optimizer_coarse=0.9),
-
+        #Config(num_conformers=10, optimizer_fine=0.4, optimizer_coarse=0.9),
         #Config(num_conformers=20, optimizer_fine=0.5, optimizer_coarse=0.9),
         #Config(num_conformers=40, optimizer_fine=0.5, optimizer_coarse=0.9),
 
@@ -282,7 +263,6 @@ if __name__ == '__main__':
         #Config(num_conformers=20, optimizer_fine=0.1, optimizer_coarse=0.3),
         #Config(num_conformers=40, optimizer_fine=0.1, optimizer_coarse=0.6),
 
-        # hier kickt das conf minimum adding ziemlich hart
         #Config(num_conformers=10, optimizer_fine=0.01, optimizer_coarse=0.5, assemblies=1),
         #Config(num_conformers=30, optimizer_fine=0.01, optimizer_coarse=0.5, assemblies=1),
         #Config(num_conformers=60, optimizer_fine=0.01, optimizer_coarse=0.5, assemblies=1),
@@ -295,8 +275,7 @@ if __name__ == '__main__':
         # Config(num_conformers=20, optimizer_fine=0.10, optimizer_coarse=0.5),
         # Config(num_conformers=20, optimizer_fine=0.20, optimizer_coarse=0.5),
 
-
-        Config(num_conformers=20, optimizer_fine=0.1, optimizer_coarse=0.3, core='murcko'),
+        # Config(num_conformers=20, optimizer_fine=0.1, optimizer_coarse=0.3, core='murcko'),
     ]
 
     results_csv = None
